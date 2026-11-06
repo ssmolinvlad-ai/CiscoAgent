@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
 $bypass=@($env:NO_PROXY -split ',' | Where-Object { $_ }) + @('127.0.0.1','localhost','::1')
 $env:NO_PROXY=($bypass | Select-Object -Unique) -join ','
