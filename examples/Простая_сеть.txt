@@ -1,0 +1,12 @@
+# Структурированная лабораторная: работает без API
+название: Два компьютера через коммутатор
+файл: simple-lan.pkt
+устройство SW1 switch 2960-24TT
+устройство PC1 pc PC-PT
+устройство PC2 pc PC-PT
+связь PC1:FastEthernet0 SW1:FastEthernet0/1 straight
+связь PC2:FastEthernet0 SW1:FastEthernet0/2 straight
+адрес PC1 FastEthernet0 192.168.10.10/24
+адрес PC2 FastEthernet0 192.168.10.20/24
+пинг PC1 192.168.10.20 allow
+пинг PC2 192.168.10.10 allow
