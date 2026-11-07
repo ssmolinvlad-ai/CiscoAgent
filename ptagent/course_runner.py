@@ -191,7 +191,7 @@ class CourseRunner(Executor):
                 if not previous.is_file():
                     raise ValueError('Исходный .pkt не найден: ' + str(previous))
                 await self.call('pt_open_project', path=str(previous))
-            elif request.lab != 3 and not request.use_current:
+            elif request.lab not in (3,5) and not request.use_current:
                 raise ValueError('Выберите исходный .pkt предыдущей лабораторной')
             self.observe('План эксперимента', {'lab': request.lab, 'variant': request.variant,
                 'requirements': REQUIREMENTS[request.lab], 'previous_project': request.previous_project or 'Уже открытая сеть'})
@@ -205,6 +205,9 @@ class CourseRunner(Executor):
             elif request.lab == 4:
                 from .course_switching import resilience
                 await resilience(self, request)
+            elif request.lab == 5:
+                from .course_static import static_routing
+                await static_routing(self,request)
             else:
                 from .course_routing import routing
                 await routing(self, request)

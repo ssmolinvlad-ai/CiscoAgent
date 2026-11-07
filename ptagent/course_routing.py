@@ -158,10 +158,11 @@ async def all_ping(r,hosts):
 
 
 async def traceroutes(r,hosts,title):
-    pairs=list(itertools.combinations(hosts,2))
-    if len(pairs)<3:raise ValueError('Нужно минимум три пары ПК для трёх трассировок')
+    names=list(hosts)
+    if len(names)<3:raise ValueError('Нужно минимум три ПК в разных сетях для трёх трассировок')
+    pairs=[(names[0],names[1]),(names[1],names[2]),(names[2],names[0])]
     results=[]
-    for a,b in (pairs[0],pairs[len(pairs)//2],pairs[-1]):
+    for a,b in pairs:
         text=await r.host(a,'tracert '+hosts[b])
         r.observe(title+f' {a} → {b}',text)
         ips=re.findall(r'\b(?:\d{1,3}\.){3}\d{1,3}\b',text)

@@ -277,6 +277,7 @@ class CourseDialog(QDialog):
         self.variant=QSpinBox(); self.variant.setRange(1,20)
         self.hostname=QLineEdit('Student-1-Group')
         self.previous=QLineEdit()
+        self.topology_plan=QLineEdit()
         self.current=QCheckBox('Использовать уже открытую сеть предыдущей лабораторной')
         self.current.setChecked(True)
         profile_path=Path(os.environ.get('CISCO_AGENT_PROFILE',str(Path.home()/'Documents'/'PacketTracerLabs'/'course-user.local.json')))
@@ -295,6 +296,13 @@ class CourseDialog(QDialog):
         if lab==3:
             layout.addRow('Имя IOS латиницей: ФамилияИО-номер-группа',self.hostname)
             layout.addRow('Учебный пароль console/vty/enable',self.password)
+        elif lab==5:
+            row=QHBoxLayout();row.addWidget(self.topology_plan)
+            choose=QPushButton('Выбрать JSON схемы');row.addWidget(choose)
+            choose.clicked.connect(self.choose_topology)
+            layout.addRow('Точная схема варианта (LabPlan JSON)',row)
+            warning=QLabel('В PDF №5 схемы находятся по внешним ссылкам. Нужен план именно вашего варианта; случайная сеть не подставляется.')
+            warning.setWordWrap(True);layout.addRow(warning)
         else:
             row=QHBoxLayout(); row.addWidget(self.previous)
             choose=QPushButton('Выбрать .pkt'); row.addWidget(choose)
@@ -318,12 +326,16 @@ class CourseDialog(QDialog):
         path,_=QFileDialog.getOpenFileName(self,'Сеть предыдущей лабораторной','','Packet Tracer (*.pkt)')
         if path:self.previous.setText(path);self.current.setChecked(False)
 
+    def choose_topology(self):
+        path,_=QFileDialog.getOpenFileName(self,'Точная схема варианта №5','','План LabPlan (*.json)')
+        if path:self.topology_plan.setText(path)
+
     def request(self):
         from .coursework import CourseRequest
         return CourseRequest(lab=self.lab,variant=self.variant.value(),hostname=self.hostname.text().strip(),
             previous_project=self.previous.text().strip(),use_current=self.current.isChecked(),
             physical_windows=self.physical.isChecked(),physical_interface=self.interface_index.value(),
-            console_password=self.password.text(),enable_password=self.password.text())
+            console_password=self.password.text(),enable_password=self.password.text(),topology_plan=self.topology_plan.text().strip())
 
     def validate_and_accept(self):
         try:self.request()
@@ -335,7 +347,7 @@ class CourseDialog(QDialog):
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("CiscoAgent 0.2 — Packet Tracer")
+        self.setWindowTitle("CiscoAgent 0.2.1 — Packet Tracer")
         self.resize(1390,900)
         self.setMinimumSize(1050,700)
         self.assignment=Assignment("")
@@ -636,10 +648,16 @@ def main():
         app.processEvents()
         window.grab().save(str(output/'main-window.png'))
         results={}
-        for lab in (2,3,4,6,7):
+        for lab in (2,3,4,5,6,7):
             dialog=CourseDialog(lab,window)
             dialog.show();app.processEvents()
-            results[str(lab)]=dialog.request().lab==lab
+            if lab==5:
+                try:
+                    dialog.request();results['5']=False
+                except ValueError:
+                    results['5']=True
+            else:
+                results[str(lab)]=dialog.request().lab==lab
             dialog.grab().save(str(output/f'lab-{lab}-dialog.png'))
             dialog.close()
         from . import __version__

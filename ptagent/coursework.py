@@ -11,9 +11,10 @@ from pydantic import Field, model_validator
 from .models import StrictModel
 
 TITLES = {2: 'Исследование ARP', 3: 'Настройка коммутаторов и VLAN',
-          4: 'STP и EtherChannel', 6: 'Динамическая маршрутизация RIP',
+          4: 'STP и EtherChannel', 5: 'Статическая маршрутизация', 6: 'Динамическая маршрутизация RIP',
           7: 'Динамическая маршрутизация OSPF'}
 PDF_HASHES = {
+    '4b1bde22b30d7deb95f282b29b4522fadb79d0d10c5a37d185e9db3e7ddf9017': 5,
     '4b3dafc07c75e10e6d745e43436d3607710e7f853dff84f080007e75c9810034': 2,
     'bd7184995b84607dc094c47c8917d5cf63e2b4c4a2600160b4c438847081be7f': 3,
     '9411e8923351737f3e9e2c33c6a3eb80d6631cac420a2271306994454f3d4893': 4,
@@ -32,13 +33,14 @@ def recognize_coursework(path: Path, text: str) -> int | None:
     markers = {2: ('изучение протокола arp',),
                3: ('основы настройки управляемых коммутаторов',),
                4: ('построение отказоустойчивых сетей',),
+               5: ('настройка статической маршрутизации',),
                6: ('протокол динамической маршрутизации rip',),
                7: ('протокол динамической маршрутизации ospf',)}
     return next((n for n, phrases in markers.items() if any(p in normalized[:600] for p in phrases)), None)
 
 
 class CourseRequest(StrictModel):
-    lab: Literal[2, 3, 4, 6, 7]
+    lab: Literal[2, 3, 4, 5, 6, 7]
     variant: int = Field(default=1, ge=1, le=20)
     hostname: str = Field(default='Student-1-Group', pattern=r'^[A-Za-z][A-Za-z0-9-]{0,62}$')
     previous_project: str = ''
@@ -46,11 +48,14 @@ class CourseRequest(StrictModel):
     physical_windows: bool = False
     physical_interface: int = Field(default=0, ge=0)
     validation_only: bool = False
+    topology_plan: str = ''
     console_password: str = Field(default='', repr=False)
     enable_password: str = Field(default='', repr=False)
 
     @model_validator(mode='after')
     def parameters(self):
+        if self.lab==5 and (not self.topology_plan or Path(self.topology_plan).suffix.lower()!='.json'):
+            raise ValueError('Для №5 нужен JSON-план точной схемы варианта: в PDF схемы вынесены во внешние ссылки. Подставная топология не используется.')
         for secret in (self.console_password, self.enable_password):
             if secret and not re.fullmatch(r'[A-Za-z0-9_-]{8,40}', secret):
                 raise ValueError('Учебный пароль: 8–40 латинских букв, цифр, _ или -')
@@ -74,6 +79,11 @@ VARIANTS = {
 }
 
 REQUIREMENTS = {
+ 5: ['Точная схема из подтверждённого плана и один ПК у каждого роутера',
+     'Уникальные подсети LAN и WAN с маской /24', 'Фактические адреса и состояние портов show ip interface brief',
+     'До настройки маршрутов межсетевые ping не проходят', 'Статические маршруты настроены на всех роутерах',
+     'Таблицы show ip route подтверждают статические маршруты', 'После настройки все межсетевые ping проходят',
+     'Успешные tracert минимум в три сети'],
  2: ['Продолжить сеть из №1 и проверить адреса', 'Пустой ARP-кэш до первого ping',
      'Реальные события ARP и ICMP с решениями OSI', 'ARP-таблицы всех ПК после обмена',
      'Полносвязная проверка ping между ПК', 'Повторный обмен с заполненным кэшем и сравнение',
