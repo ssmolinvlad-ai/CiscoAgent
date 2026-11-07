@@ -13,7 +13,7 @@ from PySide6.QtGui import QColor, QDesktopServices, QFont, QFontDatabase, QPaint
 from PySide6.QtWidgets import (
     QApplication, QCheckBox, QDialog, QFileDialog, QFormLayout, QFrame, QGraphicsScene,
     QGraphicsView, QHBoxLayout, QLabel, QLineEdit, QMainWindow, QMessageBox, QPlainTextEdit,
-    QProgressBar, QPushButton, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget,
+    QProgressBar, QPushButton, QSplitter, QTabWidget, QTextBrowser, QVBoxLayout, QWidget, QSpinBox,
 )
 
 from .bridge import connect_bridge
@@ -41,7 +41,7 @@ QPushButton:disabled {color:#687891;background:#182338;border-color:#28344a}
 QPushButton#primary {background:#50d4bb;color:#09221e;border:none}
 QPushButton#primary:hover {background:#81e6d3}
 QPushButton#stop {color:#ffaaaa}
-QPlainTextEdit,QTextBrowser,QLineEdit {background:#101a2d;border:1px solid #2b3b57;border-radius:8px;padding:10px;selection-background-color:#315d7b}
+QPlainTextEdit,QTextBrowser,QLineEdit,QSpinBox {background:#101a2d;border:1px solid #2b3b57;border-radius:8px;padding:10px;selection-background-color:#315d7b}
 QPlainTextEdit {font-family:'Cascadia Mono','Consolas';font-size:12px}
 QProgressBar {border:0;border-radius:5px;background:#26334a;height:10px;text-align:center;color:transparent}
 QProgressBar::chunk {background:#50d4bb;border-radius:5px}
@@ -134,10 +134,11 @@ class AgentWorker(QThread):
     plan_ready=Signal(object)
     result=Signal(object,str)
 
-    def __init__(self,assignment,folder,use_ai,plan_only,control):
+    def __init__(self,assignment,folder,use_ai,plan_only,control,course_request=None):
         super().__init__()
         self.assignment,self.folder=assignment,folder
         self.use_ai,self.plan_only,self.control=use_ai,plan_only,control
+        self.course_request=course_request
 
     def run(self):
         try:
@@ -158,6 +159,22 @@ class AgentWorker(QThread):
         desktop=None
         if not self.plan_only:
             desktop=require_open_cisco()
+        if self.course_request is not None:
+            from .coursework import REQUIREMENTS,TITLES
+            from .course_runner import CourseRunner
+            request=self.course_request
+            if request.lab==3:
+                from .course_switching import switching_plan
+                self.plan_ready.emit(switching_plan(request.variant)[0])
+            if self.plan_only:
+                report=RunReport(title=TITLES[request.lab],started_at=now(),finished_at=now(),status='planned',
+                    assumptions=REQUIREMENTS[request.lab],environment=environment)
+                write_report(self.folder,report)
+            else:
+                async with connect_bridge(self.folder,self.log.emit) as bridge:
+                    report=await CourseRunner(bridge,self.folder,self.control,self.stage.emit,self.log.emit).run_course(request,environment,desktop)
+            self.result.emit(report,str(self.folder))
+            return
         try:
             await self.control.checkpoint()
             plan=await analyze(self.assignment,self.use_ai)
@@ -249,10 +266,76 @@ class SetupDialog(QDialog):
         layout.addWidget(close)
 
 
+class CourseDialog(QDialog):
+    def __init__(self,lab,parent=None):
+        super().__init__(parent)
+        from .coursework import TITLES
+        self.lab=lab
+        self.setWindowTitle(f'Лабораторная №{lab} — {TITLES[lab]}')
+        self.resize(640,350)
+        layout=QFormLayout(self)
+        self.variant=QSpinBox(); self.variant.setRange(1,20)
+        self.hostname=QLineEdit('Student-1-Group')
+        self.previous=QLineEdit()
+        self.current=QCheckBox('Использовать уже открытую сеть предыдущей лабораторной')
+        self.current.setChecked(True)
+        profile_path=Path(os.environ.get('CISCO_AGENT_PROFILE',str(Path.home()/'Documents'/'PacketTracerLabs'/'course-user.local.json')))
+        try:
+            profile=json.loads(profile_path.read_text(encoding='utf-8'))
+            self.variant.setValue(int(profile.get('variant',1)))
+            self.hostname.setText(profile.get('hostname','Student-1-Group'))
+            previous=profile.get('previous_projects',{}).get(str(lab),'')
+            if previous and Path(previous).is_file():
+                self.previous.setText(previous);self.current.setChecked(False)
+        except (OSError,ValueError,TypeError):
+            pass
+        self.password=QLineEdit(); self.password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.password.setPlaceholderText('Пусто — сгенерировать учебный пароль для этого запуска')
+        layout.addRow('Вариант / номер по списку',self.variant)
+        if lab==3:
+            layout.addRow('Имя IOS латиницей: ФамилияИО-номер-группа',self.hostname)
+            layout.addRow('Учебный пароль console/vty/enable',self.password)
+        else:
+            row=QHBoxLayout(); row.addWidget(self.previous)
+            choose=QPushButton('Выбрать .pkt'); row.addWidget(choose)
+            choose.clicked.connect(self.choose_project)
+            layout.addRow('Готовая сеть из предыдущей работы',row)
+            layout.addRow(self.current)
+        self.physical=QCheckBox('Выполнить опыт Windows ARP: связь со шлюзом временно пропадёт, затем восстановится')
+        self.interface_index=QSpinBox();self.interface_index.setRange(0,10000)
+        self.interface_index.setSpecialValueText('Единственный адаптер со шлюзом')
+        if lab==2:
+            layout.addRow(self.physical)
+            layout.addRow('Индекс адаптера Windows для опыта',self.interface_index)
+        text=QLabel('Сценарий выполняется без ИИ API. Перед изменениями сохраняется резервная копия. '
+                    'Отчёт Word содержит фактические проверки и неподтверждённые этапы.')
+        text.setWordWrap(True);layout.addRow(text)
+        buttons=QHBoxLayout();accept=QPushButton('Выполнить сценарий');cancel=QPushButton('Отмена')
+        accept.clicked.connect(self.validate_and_accept);cancel.clicked.connect(self.reject)
+        buttons.addWidget(accept);buttons.addWidget(cancel);layout.addRow(buttons)
+
+    def choose_project(self):
+        path,_=QFileDialog.getOpenFileName(self,'Сеть предыдущей лабораторной','','Packet Tracer (*.pkt)')
+        if path:self.previous.setText(path);self.current.setChecked(False)
+
+    def request(self):
+        from .coursework import CourseRequest
+        return CourseRequest(lab=self.lab,variant=self.variant.value(),hostname=self.hostname.text().strip(),
+            previous_project=self.previous.text().strip(),use_current=self.current.isChecked(),
+            physical_windows=self.physical.isChecked(),physical_interface=self.interface_index.value(),
+            console_password=self.password.text(),enable_password=self.password.text())
+
+    def validate_and_accept(self):
+        try:self.request()
+        except ValueError as exc:
+            QMessageBox.warning(self,'Проверьте параметры',str(exc));return
+        self.accept()
+
+
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Packet Tracer Lab Agent")
+        self.setWindowTitle("CiscoAgent 0.2 — Packet Tracer")
         self.resize(1390,900)
         self.setMinimumSize(1050,700)
         self.assignment=Assignment("")
@@ -422,6 +505,9 @@ class MainWindow(QMainWindow):
         self.editor.setPlainText(assignment.text)
         self.source.setText(Path(assignment.source).name+f" · изображений/страниц: {len(assignment.images)}")
         self.source.setToolTip(assignment.source)
+        if assignment.course_id:
+            from .coursework import TITLES
+            self.source.setText(self.source.text()+f' · Сценарий №{assignment.course_id}: {TITLES[assignment.course_id]} · API не нужен')
         if assignment.images:
             pixmap=QPixmap()
             pixmap.loadFromData(assignment.images[0])
@@ -435,6 +521,11 @@ class MainWindow(QMainWindow):
         if not text and not self.assignment.images:
             QMessageBox.information(self,"Нужно задание","Загрузите файл или вставьте текст задания.")
             return
+        course_request=None
+        if self.assignment.course_id:
+            dialog=CourseDialog(self.assignment.course_id,self)
+            if dialog.exec()!=QDialog.DialogCode.Accepted:return
+            course_request=dialog.request()
         self.control=RunControl()
         base=Path(os.environ.get("PT_AGENT_RESULTS",str(Path.home()/"Documents"/"PacketTracerLabs")))
         self.result_folder=base/(datetime.now().strftime("%Y-%m-%d_%H-%M-%S")+"_"+uuid.uuid4().hex[:6])
@@ -443,7 +534,7 @@ class MainWindow(QMainWindow):
         self.report=None
         self.set_busy(True)
         self.progress.setValue(0)
-        self.worker=AgentWorker(Assignment(text,self.assignment.images,self.assignment.source),self.result_folder,self.ai.isChecked(),self.plan_only.isChecked(),self.control)
+        self.worker=AgentWorker(Assignment(text,self.assignment.images,self.assignment.source,self.assignment.course_id),self.result_folder,self.ai.isChecked(),self.plan_only.isChecked(),self.control,course_request)
         self.worker.log.connect(self.add_log)
         self.worker.stage.connect(self.show_stage)
         self.worker.plan_ready.connect(self.show_plan)
@@ -535,6 +626,26 @@ def main():
     app.setStyleSheet(STYLE)
     window=MainWindow()
     window.show()
+    if '--diagnose-gui' in sys.argv:
+        # Render this application's own widgets for packaging diagnostics. No
+        # Windows input automation, Cisco launch, network call or API key is used.
+        output=Path(sys.argv[sys.argv.index('--diagnose-gui')+1]).resolve()
+        output.mkdir(parents=True,exist_ok=True)
+        from .course_switching import switching_plan
+        window.show_plan(switching_plan(4)[0])
+        app.processEvents()
+        window.grab().save(str(output/'main-window.png'))
+        results={}
+        for lab in (2,3,4,6,7):
+            dialog=CourseDialog(lab,window)
+            dialog.show();app.processEvents()
+            results[str(lab)]=dialog.request().lab==lab
+            dialog.grab().save(str(output/f'lab-{lab}-dialog.png'))
+            dialog.close()
+        from . import __version__
+        (output/'gui-diagnostics.json').write_text(json.dumps({'version':__version__,'title':window.windowTitle(),'dialogs':results},ensure_ascii=False),encoding='utf-8')
+        window.close()
+        return 0 if all(results.values()) else 1
     return app.exec()
 
 

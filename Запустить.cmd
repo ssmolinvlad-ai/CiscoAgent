@@ -1,5 +1,6 @@
 @echo off
 cd /d "%~dp0"
+if not defined CISCO_AGENT_PROFILE if exist "%~dp0course-user.local.json" set "CISCO_AGENT_PROFILE=%~dp0course-user.local.json"
 if exist "bin\Verified\PacketTracerAgent\PacketTracerAgent.exe" (
   start "" "bin\Verified\PacketTracerAgent\PacketTracerAgent.exe"
   exit /b

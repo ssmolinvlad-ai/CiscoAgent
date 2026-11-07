@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "packet-tracer-lab-agent"
-version = "0.1.0"
+version = "0.2.0"
 description = "Автономное выполнение лабораторных Cisco Packet Tracer"
 requires-python = ">=3.11"
 dependencies = [
@@ -22,6 +22,9 @@ packet-tracer-agent = "ptagent.gui:main"
 
 [tool.setuptools.packages.find]
 include = ["ptagent*"]
+
+[tool.setuptools.package-data]
+ptagent = ["assets/*.ps1"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

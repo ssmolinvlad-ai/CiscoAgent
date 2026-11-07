@@ -140,6 +140,11 @@ class Executor:
                 models[device.model]=json_reply(await self.call("pt_get_device_details",model_name=device.model))
             ports={p["name"] for p in models[device.model].get("ports",[])}
             wanted={i.name for i in device.interfaces}
+            # SVIs are created by IOS after the VLAN database, not physical slots.
+            virtual={i.name for i in device.interfaces if device.kind=='switch'
+                     and re.fullmatch(r'Vlan[0-9]+',i.name)
+                     and int(i.name[4:]) in ({1}|set(device.vlans))}
+            wanted-=virtual
             for link in plan.links:
                 wanted.update(e.port for e in (link.a,link.b) if e.device==device.name)
             if wanted-ports:

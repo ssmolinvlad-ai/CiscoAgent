@@ -20,3 +20,4 @@ auth.json
 config.toml
 *.pkt
 *.pka
+*.local.json

@@ -11,6 +11,7 @@ class Assignment:
     text: str
     images: list[bytes] = field(default_factory=list)
     source: str = "Введённый текст"
+    course_id: int | None = None
 
     def image_urls(self):
         return ["data:image/png;base64," + base64.b64encode(x).decode("ascii") for x in self.images]
@@ -51,7 +52,9 @@ def load_assignment(path: Path) -> Assignment:
                 # Render every page: diagrams can be vector graphics, not embedded bitmaps.
                 scale = min(1.5, 2000 / max(page.rect.width, page.rect.height))
                 images.append(page.get_pixmap(matrix=pymupdf.Matrix(scale, scale), alpha=False).tobytes("png"))
-        return Assignment("\n\n".join(texts), images, str(path))
+        text = "\n\n".join(texts)
+        from .coursework import recognize_coursework
+        return Assignment(text, images, str(path), recognize_coursework(path, text))
     if suffix == ".docx":
         from docx import Document
         from docx.oxml.ns import qn

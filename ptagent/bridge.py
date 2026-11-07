@@ -50,6 +50,16 @@ def json_reply(text: str) -> dict:
 
 def ensure_reply(text: str):
     """Upstream often returns error strings with MCP isError=false."""
+    try:
+        structured=json.loads(text)
+    except (ValueError,TypeError):
+        structured=None
+    if isinstance(structured,dict):
+        if structured.get('ok') is False or structured.get('verified') is False or structured.get('error') or structured.get('rejected_lines'):
+            raise BridgeError(text[:1200])
+        # Experiment evidence can legitimately contain "Request timed out" or
+        # failed frames. These are observations, not a transport error.
+        return
     if re.search(r"(?im)(?:^|\n)\s*(?:ERROR\b|PT error\b|Error:|Not saved:|Not opened:|No answer\b|No response\b|Could not\b|Unreadable\b|DUPLICATE:)",text) or re.search(r"(?i)\b(?:not connected|bridge is not|timed? out|timeout while|UNKNOWN COMMAND|WAITING FOR ANSWER)\b", text):
         raise BridgeError(text[:1200])
     try:
@@ -100,7 +110,10 @@ class MCPBridge:
         except Exception as exc:
             raise BridgeError(f"Нет подтверждённого ответа {tool_name}. Действие могло выполниться; автоматический повтор запрещён.") from exc
         text = unpack_result(result)
-        ensure_reply(text)
+        # A supplied interactive answer list deliberately crosses Password prompts.
+        # Keep all other failures strict; the caller must verify the final transcript.
+        interactive = tool_name == 'pt_host_command' and bool(arguments.get('inputs'))
+        ensure_reply(text.replace('WAITING FOR ANSWER', 'EXPECTED INTERACTIVE PROMPT') if interactive else text)
         return text
 
 

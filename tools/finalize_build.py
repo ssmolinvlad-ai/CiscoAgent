@@ -24,6 +24,8 @@ print("Локальные библиотеки Visual C++ согласованы
 if len(sys.argv)==1:
     shutil.copytree(application,root/"bin"/"Current",dirs_exist_ok=True)
     shutil.copytree(application,root/"bin"/"Direct"/"PacketTracerAgent",dirs_exist_ok=True)
+    shutil.copytree(application,root/"bin"/"Verified"/"PacketTracerAgent",dirs_exist_ok=True)
     backend=root/"bin"/"PacketTracerBridge"
     if backend.is_dir():
         shutil.copytree(backend,root/"bin"/"Direct"/"PacketTracerBridge",dirs_exist_ok=True)
+        shutil.copytree(backend,root/"bin"/"Verified"/"PacketTracerBridge",dirs_exist_ok=True)
